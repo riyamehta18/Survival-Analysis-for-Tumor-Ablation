@@ -14,10 +14,10 @@ Sample Size Calculation: The repository also includes code for sample size calcu
 
 This project was developed using R version 2023.06.0+421 (2023.06.0+421). The following R packages and libraries were utilized for data analysis and statistical modeling:
 
-- **tidyverse (version 1.3.1)**: A collection of R packages for data manipulation and visualization.
-- **survival (version 3.2-13)**: Used for survival analysis, including Kaplan-Meier survival curves and cumulative incidence functions.
-- **cmprsk (version 2.2-11)**: Employed for competing risk regression models.
-- **coxme (version 2.2-16)**: Utilized for fitting Cox mixed-effects models.
+- `**tidyverse (version 1.3.1)**`: A collection of R packages for data manipulation and visualization.
+- `**survival (version 3.2-13)**`: Used for survival analysis, including Kaplan-Meier survival curves and cumulative incidence functions.
+- `**cmprsk (version 2.2-11)**`: Employed for competing risk regression models.
+- `**coxme (version 2.2-16)**`: Utilized for fitting Cox mixed-effects models.
 
 To reproduce the environment and install these packages, you can use the following commands:
 
