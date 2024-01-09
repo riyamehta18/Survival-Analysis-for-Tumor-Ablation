@@ -1,0 +1,470 @@
+---
+title: "Tumor Ablation Code"
+author: "Riya Mehta"
+date: "2024-01-01"
+output: html_document
+---
+
+```{r}
+library(survival)
+library(survminer)
+library(cmprsk)
+library(ggplot2)
+library(stringr)
+library(knitr)
+library(kableExtra)
+library(webshot)
+library(geepack)
+library(rms)
+library(dplyr)
+library(coxme)
+```
+
+```{r}
+# Reading in 3 csv files containing data
+tumor <- read.csv("tumordata.csv")
+procedure <- read.csv("proceduredata.csv")
+patient <- read.csv("patientdata.csv")
+```
+
+
+```{r}
+# Creating a new data frame 'new_tumor' by removing rows with missing values in the 'local_recur' column from the 'tumor' data frame
+new_tumor <- tumor[!is.na(tumor$local_recur), ]
+
+# Creating a new data frame 'new_procedure' by removing rows with missing values in the 'hepatic_recur' column from the 'procedure' data frame
+new_procedure <- procedure[!is.na(procedure$hepatic_recur), ]
+```
+
+
+```{r}
+# Creating a new column 'mortalityrecurrence' based on conditions in the 'new_tumor' data frame
+# If 'mortality' is 0 and 'local_recur' is 0, set 'mortalityrecurrence' to 0
+# If 'mortality' is 1 and 'local_recur' is 0, set 'mortalityrecurrence' to 1
+# If 'mortality' is 0 and 'local_recur' is 1, set 'mortalityrecurrence' to 2
+# Otherwise, set 'mortalityrecurrence' to 3
+new_tumor$mortalityrecurrence <- with(new_tumor, 
+                                      ifelse(mortality == 0 & local_recur == 0, 0,
+                                             ifelse(mortality == 1 & local_recur == 0, 1,
+                                                    ifelse(mortality == 0 & local_recur == 1, 2, 3)
+                                                    )
+                                             ))
+```
+
+
+```{r}
+# Recoding the 'AFP' column into a binary variable 'AFP_binary' in the 'new_tumor', 'new_procedure', and 'patient' data frames
+# If 'AFP' is greater than 20, set 'AFP_binary' to 1; otherwise, set it to 0
+new_tumor$AFP_binary <- ifelse(new_tumor$AFP > 20, 1, 0)
+new_procedure$AFP_binary <- ifelse(new_procedure$AFP > 20, 1, 0)
+patient$AFP_binary <- ifelse(patient$AFP > 20, 1, 0)
+```
+
+
+```{r}
+# Calculate the number of months for local recurrence based on days (assuming 30 days in a month)
+new_tumor$local_recur_months <- new_tumor$local_recur_days / 30  # Creates a new column for the number of months
+
+# Create a survival object for local recurrence using the 'Surv' function
+surv_object_tumor <- with(new_tumor, Surv(time = local_recur_months, event = composite_endpoint == 1))
+
+# Fit the Kaplan-Meier survival curve using 'survfit'
+km_fit_tumor <- survfit(surv_object_tumor ~ 1, 
+                        data = new_tumor, 
+                        cluster = new_tumor$patient_id)
+
+# Create a Kaplan-Meier survival plot using 'ggsurvplot'
+km_tumor_plot <- ggsurvplot(
+  km_fit_tumor,
+  data = new_tumor,
+  risk.table = TRUE,
+  conf.int = TRUE,
+  title = "Local Tumor Progression after Simulation-Guided RFA",
+  xlab = "Time (Months)",
+  ylab = "Cumulative Incidence (%)",
+  pval = TRUE,
+  fun = function(x) 100 * (1 - x),
+  risk.table.title = "At Risk",
+  conf.int.fill = "darkgray",
+  conf.int.alpha = 0.3,
+  ggtheme = theme_minimal() + theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(color = "black")
+  ),
+  surv.plot.type = "default",
+  break.x.by = 6,
+  palette = c("red", "darkgray"),
+  risk.table.col = "strata",
+  risk.table.col.y.text = TRUE,
+  risk.table.height = 0.25,
+  risk.table.y.text = TRUE,
+  legend.labs = c("Recurrence"),
+  legend.title = "",
+  xlim = c(0, 48)
+)
+
+# Print the Kaplan-Meier survival plot
+print(km_tumor_plot)
+
+# Print summary statistics for the Kaplan-Meier survival curve
+print(surv_summary(km_fit_tumor))
+
+# Store the summary table for further analysis if needed
+summary_table <- surv_summary(km_fit_tumor)
+```
+
+
+```{r}
+# Calculate the number of months for hepatic recurrence based on days (assuming 30 days in a month)
+new_procedure$hepatic_recur_months <- new_procedure$hepatic_recur_days / 30  # Creates a new column for the number of months
+
+# Create a survival object for hepatic recurrence using the 'Surv' function
+surv_object_hr <- with(new_procedure, Surv(time = hepatic_recur_months, event = composite_endpoint == 1))
+
+# Fit the Kaplan-Meier survival curve using 'survfit'
+km_fit_hr <- survfit(surv_object_hr ~ 1, 
+                     data = new_procedure, 
+                     cluster = new_procedure$patient_id)
+
+# Create a Kaplan-Meier survival plot using 'ggsurvplot'
+km_hr_plot <- ggsurvplot(
+  km_fit_hr,
+  data = new_procedure,
+  risk.table = TRUE,
+  conf.int = TRUE,
+  title = "Hepatic Recurrence after Simulation-Guided RFA",
+  xlab = "Time (Months)",
+  ylab = "Cumulative Incidence (%)",
+  pval = TRUE,
+  fun = function(x) 100 * (1 - x),
+  risk.table.title = "At Risk",
+  conf.int.fill = "darkgray",
+  conf.int.alpha = 0.3,
+  ggtheme = theme_minimal() + theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(color = "black")
+  ),
+  surv.plot.type = "default",
+  break.x.by = 6,
+  palette = c("blue", "darkgray"),
+  risk.table.col = "strata",
+  risk.table.col.y.text = TRUE,
+  risk.table.height = 0.25,
+  risk.table.y.text = TRUE,
+  legend.labs = c("Recurrence"),
+  legend.title = "",
+  xlim = c(0, 48)
+)
+
+# Print the Kaplan-Meier survival plot
+print(km_hr_plot)
+
+# Print summary statistics for the Kaplan-Meier survival curve
+print(surv_summary(km_fit_hr))
+
+# Store the summary table for further analysis if needed
+summary_table <- surv_summary(km_fit_hr)
+```
+
+```{r}
+# Calculate the number of months for mortality based on days (assuming 30 days in a month)
+patient$mortality_months <- patient$days_until_death / 30  # Creates a new column for the number of months
+
+# Create a survival object for mortality using the 'Surv' function
+surv_object_mort <- with(patient, Surv(time = mortality_months, event = mortality == 1))
+
+# Fit the Kaplan-Meier survival curve using 'survfit'
+km_fit_mort <- survfit(surv_object_mort ~ 1, 
+                       data = patient, 
+                       cluster = patient$patient_id)
+
+# Create a Kaplan-Meier survival plot using 'ggsurvplot'
+km_mort_plot <- ggsurvplot(
+  km_fit_mort,
+  data = patient,
+  risk.table = TRUE,
+  conf.int = TRUE,
+  title = "Overall Survival after Simulation-Guided RFA",
+  xlab = "Time (Months)",
+  ylab = "Cumulative Incidence (%)",
+  pval = TRUE,
+  fun = function(x) 100 * x,
+  risk.table.title = "At Risk",
+  conf.int.fill = "darkgray",
+  conf.int.alpha = 0.3,
+  ggtheme = theme_minimal() + theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(color = "black")
+  ),
+  surv.plot.type = "default",
+  break.x.by = 6,
+  palette = c("orange", "darkgray"),
+  risk.table.col = "strata",
+  risk.table.col.y.text = TRUE,
+  risk.table.height = 0.25,
+  risk.table.y.text = TRUE,
+  legend.labs = c("Recurrence"),
+  legend.title = "",
+  xlim = c(0, 48)
+)
+
+# Print the Kaplan-Meier survival plot
+print(km_mort_plot)
+
+# Print summary statistics for the Kaplan-Meier survival curve
+print(surv_summary(km_fit_mort))
+
+# Store the summary table for further analysis if needed
+summary_table <- surv_summary(km_fit_mort)
+```
+
+```{r}
+# Create a composite endpoint variable indicating either mortality or local recurrence
+new_tumor$composite_endpoint <- ifelse(new_tumor$mortality == 1 | new_tumor$local_recur == 1, 1, 0)
+
+# Fit a Competing Risk Regression model for local recurrence
+competing_risk_model_local <- crr(ftime = new_tumor$local_recur_months, 
+                                  fstatus = new_tumor$composite_endpoint, 
+                                  cov1 = new_tumor[, c("age", "lesions", "number_prior_interventions", "diameter", "number_tumors", "AFP_binary", "largest")], 
+                                  failcode = 1, 
+                                  cencode = 0)
+
+# Display summary statistics for the Competing Risk Regression model
+summary(competing_risk_model_local)
+```
+
+```{r}
+# Calculate cumulative incidence functions using 'cuminc' with the existing survival object for local recurrence
+cif_tumor <- cuminc(surv_object_tumor, fstatus = new_tumor$local_recur)
+
+# Plot the Cumulative Incidence Function
+plot(cif_tumor, xlab = "Months", ylab = "Cumulative Incidence (%)", main = "Cumulative Incidence Function of Local Recurrence")
+
+# Find the index of the time point closest to 12 months
+index_12_months <- which.min(abs(cif_tumor$`1`$time - 12))
+
+# Extract the cumulative incidence value at 12 months
+cif_at_12_months <- cif_tumor$`1`$est[index_12_months]
+
+# Print the cumulative incidence at 12 months
+print(cif_at_12_months)
+
+# Find the index of the time point closest to 24 months
+index_24_months <- which.min(abs(cif_tumor$`1`$time - 24))
+
+# Extract the cumulative incidence value at 24 months
+cif_at_24_months <- cif_tumor$`1`$est[index_24_months]
+
+# Print the cumulative incidence at 24 months
+print(cif_at_24_months)
+```
+
+```{r}
+# Create a composite endpoint variable indicating either mortality or hepatic recurrence
+new_procedure$composite_endpoint <- ifelse(new_procedure$mortality == 1 | new_procedure$hepatic_recur == 1, 1, 0)
+
+# Fit a Competing Risk Regression model for hepatic recurrence
+competing_risk_model_hepatic <- crr(ftime = new_procedure$hepatic_recur_months, 
+                                    fstatus = new_procedure$composite_endpoint, 
+                                    cov1 = new_procedure[, c("number_prior_interventions", "lesions", "largest", "near_large_vessel", "number_tumors", "AFP_binary")], 
+                                    failcode = 1, 
+                                    cencode = 0)
+
+# Display summary statistics for the Competing Risk Regression model
+summary(competing_risk_model_hepatic)
+```
+
+```{r}
+# Calculate cumulative incidence functions using 'cuminc' with the existing survival object for hepatic recurrence
+cif_proc <- cuminc(surv_object_hr, fstatus = new_procedure$hepatic_recur)
+
+# Plot the Cumulative Incidence Function
+plot(cif_proc, xlab = "Months", main = "Cumulative Incidence Function of Hepatic Recurrence")
+
+# Find the index of the time point closest to 12 months
+index_12_months3 <- which.min(abs(cif_proc$`1`$time - 12))
+
+# Extract the cumulative incidence value at 12 months
+cif_at_12_months3 <- cif_proc$`1`$est[index_12_months3]
+
+# Print the cumulative incidence at 12 months
+print(cif_at_12_months3)
+
+# Find the index of the time point closest to 24 months
+index_24_months3 <- which.min(abs(cif_proc$`1`$time - 24))
+
+# Extract the cumulative incidence value at 24 months
+cif_at_24_months3 <- cif_proc$`1`$est[index_24_months3]
+
+# Print the cumulative incidence at 24 months
+print(cif_at_24_months3)
+```
+
+```{r}
+# Fit a Competing Risk Regression model for mortality
+competing_risk_model_mortality <- crr(
+  ftime = patient$mortality_months,  # Time to mortality in months
+  fstatus = patient$mortality,  # Mortality status (1: event, 0: no event)
+  cov1 = patient[, c("AFP_binary", "largest",  "number_prior_interventions", "number_tumors")],  # Covariates
+  failcode = 1,  # Code indicating the event of interest
+  cencode = 0  # Code indicating censored observations
+)
+
+# Display summary statistics for the Competing Risk Regression model for mortality
+summary(competing_risk_model_mortality)
+```
+
+```{r}
+# Fit a Cox mixed-effects model for local recurrence
+coxme_tumor <- coxme(
+  Surv(time = local_recur_months, event = local_recur) ~ 
+    age + lesions + largest +
+    near_large_vessel + size_greater_3 + number_tumors + AFP_binary + 
+    number_prior_interventions + (1 | patient_id),
+  data = new_tumor
+)
+
+# Print the summary of the Cox mixed-effects model
+summary(coxme_tumor)
+```
+
+```{r}
+# Fit a Cox mixed-effects model for hepatic recurrence
+coxme_proc <- coxme(
+  Surv(time = hepatic_recur_months, event = hepatic_recur) ~ 
+    AFP_binary + lesions + largest + near_large_vessel + number_tumors + number_prior_interventions + (1 | patient_id),
+  data = new_procedure
+)
+
+# Print the summary of the Cox mixed-effects model
+summary(coxme_proc)
+```
+
+```{r}
+# Convert 'BCLC' and 'ABC' to factors
+patient$BCLC <- factor(patient$BCLC)
+patient$ABC <- factor(patient$ABC)
+
+# Fit a Cox mixed-effects model for mortality with 'BCLC' factor
+coxme_patient_BCLC <- coxme(
+  Surv(time = mortality_months, event = mortality == 1) ~ 
+    AFP_binary + largest + BCLC + number_tumors + number_prior_interventions + (1 | patient_id),
+  data = patient
+)
+
+# Print the summary of the Cox mixed-effects model for 'BCLC'
+summary(coxme_patient_BCLC)
+
+# Fit a Cox mixed-effects model for mortality with 'ABC' factor
+coxme_patient_ABC <- coxme(
+  Surv(time = mortality_months, event = mortality == 1) ~ 
+    AFP_binary + largest + number_tumors + number_prior_interventions + ABC + (1 | patient_id),
+  data = patient
+)
+
+# Print the summary of the Cox mixed-effects model for 'ABC'
+summary(coxme_patient_ABC)
+```
+
+```{r}
+# Define study-specific parameters for the first scenario
+historical_control_ltp_rate <- 0.172  # Historical control 2-year LTP rate
+desired_improvement <- 0.91  # Desired improvement (75% reduction in LTP rate)
+type_I_error <- 0.05  # Type-I error rate
+power <- 0.80  # Desired power
+expected_loss_rate <- 0.10  # Expected loss rate (dropout rate)
+
+# Calculate required sample size for the first scenario
+sample_size <- power.prop.test(
+  p1 = historical_control_ltp_rate,
+  p2 = historical_control_ltp_rate * (1 - desired_improvement),
+  sig.level = type_I_error,
+  power = power
+)$n
+
+# Adjust for expected loss rate
+adjusted_sample_size <- ceiling(sample_size / (1 - expected_loss_rate))
+
+# Print the results for the first scenario
+cat("Scenario 1:\n")
+cat("Historical Control LTP Rate:", round(historical_control_ltp_rate * 100, 2), "%\n")
+cat("Desired Improvement in LTP Rate:", round(desired_improvement * 100, 2), "%\n")
+cat("Type-I Error Rate (alpha):", type_I_error, "\n")
+cat("Power:", power, "\n")
+cat("Expected Loss Rate (Dropout Rate):", expected_loss_rate, "\n")
+cat("Required Sample Size (Adjusted for Loss Rate):", adjusted_sample_size, "subjects\n\n")
+
+# Define study-specific parameters for the second scenario
+historical_control_ltp_rate <- 0.272  # Estimated 2-year LTP rate from historical study (updated value)
+desired_improvement <- 0.755  # Desired improvement (75% reduction in LTP rate, updated value)
+type_I_error <- 0.05  # Type-I error rate
+power <- 0.80  # Desired power
+expected_loss_rate <- 0.10  # Expected loss rate (dropout rate)
+
+# Calculate required sample size for the second scenario
+sample_size <- power.prop.test(
+  p1 = historical_control_ltp_rate,
+  p2 = historical_control_ltp_rate * (1 - desired_improvement),
+  sig.level = type_I_error,
+  power = power
+)$n
+
+# Adjust for expected loss rate
+adjusted_sample_size <- ceiling(sample_size / (1 - expected_loss_rate))
+
+# Print the results for the second scenario
+cat("Scenario 2:\n")
+cat("Historical Control LTP Rate:", round(historical_control_ltp_rate * 100, 2), "%\n")
+cat("Desired Improvement in LTP Rate:", round(desired_improvement * 100, 2), "%\n")
+cat("Type-I Error Rate (alpha):", type_I_error, "\n")
+cat("Power:", power, "\n")
+cat("Expected Loss Rate (Dropout Rate):", expected_loss_rate, "\n")
+cat("Required Sample Size (Adjusted for Loss Rate):", adjusted_sample_size, "subjects\n")
+```
+
+```{r}
+# Values for the current study - populate x based on your study
+current_study_n <- x
+current_study_ltp_1_year <- x / 100
+current_study_ltp_2_year <- x / 100
+
+# Values for the historical control - populate x based on your study
+historical_control_n <- x
+historical_control_ltp_1_year <- x / 100
+historical_control_ltp_2_year <- x / 100
+
+# Two-sample test for LTP rates at 1 year
+test_1_year <- prop.test(
+  c(current_study_ltp_1_year * current_study_n, historical_control_ltp_1_year * historical_control_n),
+  c(current_study_n, historical_control_n),
+  alternative = "less"  # We are testing if the current study has lower rates
+)
+
+# Two-sample test for LTP rates at 2 years
+test_2_year <- prop.test(
+  c(current_study_ltp_2_year * current_study_n, historical_control_ltp_2_year * historical_control_n),
+  c(current_study_n, historical_control_n),
+  alternative = "less"  # We are testing if the current study has lower rates
+)
+
+# Print the results
+cat("Current Study (n =", current_study_n, "):\n")
+cat("LTP at 1 year:", current_study_ltp_1_year * 100, "%\n")
+cat("LTP at 2 years:", current_study_ltp_2_year * 100, "%\n\n")
+
+cat("Historical Control (n =", historical_control_n, "):\n")
+cat("LTP at 1 year:", historical_control_ltp_1_year * 100, "%\n")
+cat("LTP at 2 years:", historical_control_ltp_2_year * 100, "%\n\n")
+
+cat("Two-Sample Test for LTP Rates at 1 Year:\n")
+print(test_1_year)
+
+cat("\nTwo-Sample Test for LTP Rates at 2 Years:\n")
+print(test_2_year)
+```
